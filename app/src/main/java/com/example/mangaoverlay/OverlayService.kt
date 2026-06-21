@@ -34,7 +34,6 @@ class OverlayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Android 14: getMediaProjection 전에 반드시 포그라운드 진입
         startInForeground()
 
         val code = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
@@ -52,17 +51,19 @@ class OverlayService : Service() {
 
         addOverlay()
         addControlPanel()
-
         TranslatePipeline.warmUp()
 
         val (w, h, dpi) = screenSize()
-        capture = ScreenCapture(projection!!, w, h, dpi) { bmp ->
-            // 캡처 스레드 → 메인으로 넘겨 번역/표시
-            main.post {
-                if (!autoOn) return@post
-                TranslatePipeline.process(bmp) { bubbles -> overlayView.update(bubbles) }
+        capture = ScreenCapture(
+            projection = projection!!,
+            width = w, height = h, dpi = dpi,
+            onMovementStart = { main.post { overlayView.clear() } },   // 페이지 넘기면 이전 번역 지움
+            onPageReady = { bmp ->
+                main.post {
+                    if (autoOn) TranslatePipeline.process(bmp) { bubbles -> overlayView.update(bubbles) }
+                }
             }
-        }.also { it.start() }
+        ).also { it.start() }
 
         return START_STICKY
     }
